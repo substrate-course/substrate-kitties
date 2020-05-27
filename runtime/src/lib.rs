@@ -258,6 +258,7 @@ impl template::Trait for Runtime {
 }
 
 impl pallet_kitties::Trait for Runtime {
+	type KittyIndex = u32;
 }
 
 construct_runtime!(

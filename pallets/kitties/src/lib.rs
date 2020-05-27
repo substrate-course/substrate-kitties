@@ -1,28 +1,29 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use codec::{Encode, Decode};
-use frame_support::{decl_module, decl_storage, decl_error, ensure, StorageValue, StorageMap, traits::Randomness};
+use frame_support::{decl_module, decl_storage, decl_error, ensure, StorageValue, StorageMap, traits::Randomness, Parameter};
 use sp_io::hashing::blake2_128;
 use frame_system::ensure_signed;
-use sp_runtime::{DispatchError, DispatchResult};
+use sp_runtime::{DispatchError, DispatchResult, traits::{AtLeast32Bit, Bounded}};
 
 #[derive(Encode, Decode)]
 pub struct Kitty(pub [u8; 16]);
 
 pub trait Trait: frame_system::Trait {
+	type KittyIndex: Parameter + AtLeast32Bit + Bounded + Default + Copy;
 }
 
 decl_storage! {
 	trait Store for Module<T: Trait> as Kitties {
 		/// Stores all the kitties, key is the kitty id / index
-		pub Kitties get(fn kitties): map hasher(blake2_128_concat) u32 => Option<Kitty>;
+		pub Kitties get(fn kitties): map hasher(blake2_128_concat) T::KittyIndex => Option<Kitty>;
 		/// Stores the total number of kitties. i.e. the next kitty index
-		pub KittiesCount get(fn kitties_count): u32;
+		pub KittiesCount get(fn kitties_count): T::KittyIndex;
 
 		/// Get kitty ID by account ID and user kitty index
-		pub OwnedKitties get(fn owned_kitties): map hasher(blake2_128_concat) (T::AccountId, u32) => u32;
+		pub OwnedKitties get(fn owned_kitties): map hasher(blake2_128_concat) (T::AccountId, T::KittyIndex) => T::KittyIndex;
 		/// Get number of kitties by account ID
-		pub OwnedKittiesCount get(fn owned_kitties_count): map hasher(blake2_128_concat) T::AccountId => u32;
+		pub OwnedKittiesCount get(fn owned_kitties_count): map hasher(blake2_128_concat) T::AccountId => T::KittyIndex;
 	}
 }
 
@@ -54,7 +55,7 @@ decl_module! {
 
 		/// Breed kitties
 		#[weight = 0]
-		pub fn breed(origin, kitty_id_1: u32, kitty_id_2: u32) {
+		pub fn breed(origin, kitty_id_1: T::KittyIndex, kitty_id_2: T::KittyIndex) {
 			let sender = ensure_signed(origin)?;
 
 			Self::do_breed(sender, kitty_id_1, kitty_id_2)?;
@@ -76,26 +77,26 @@ impl<T: Trait> Module<T> {
 		payload.using_encoded(blake2_128)
 	}
 
-	fn next_kitty_id() -> sp_std::result::Result<u32, DispatchError> {
+	fn next_kitty_id() -> sp_std::result::Result<T::KittyIndex, DispatchError> {
 		let kitty_id = Self::kitties_count();
-		if kitty_id == u32::max_value() {
+		if kitty_id == T::KittyIndex::max_value() {
 			return Err(Error::<T>::KittiesCountOverflow.into());
 		}
 		Ok(kitty_id)
 	}
 
-	fn insert_kitty(owner: T::AccountId, kitty_id: u32, kitty: Kitty) {
+	fn insert_kitty(owner: T::AccountId, kitty_id: T::KittyIndex, kitty: Kitty) {
 		// Create and store kitty
-		Kitties::insert(kitty_id, kitty);
-		KittiesCount::put(kitty_id + 1);
+		Kitties::<T>::insert(kitty_id, kitty);
+		KittiesCount::<T>::put(kitty_id + 1.into());
 
 		// Store the ownership information
 		let user_kitties_id = Self::owned_kitties_count(owner.clone());
 		<OwnedKitties<T>>::insert((owner.clone(), user_kitties_id), kitty_id);
-		<OwnedKittiesCount<T>>::insert(owner, user_kitties_id + 1);
+		<OwnedKittiesCount<T>>::insert(owner, user_kitties_id + 1.into());
 	}
 
-	fn do_breed(sender: T::AccountId, kitty_id_1: u32, kitty_id_2: u32) -> DispatchResult {
+	fn do_breed(sender: T::AccountId, kitty_id_1: T::KittyIndex, kitty_id_2: T::KittyIndex) -> DispatchResult {
 		let kitty1 = Self::kitties(kitty_id_1).ok_or(Error::<T>::InvalidKittyId)?;
 		let kitty2 = Self::kitties(kitty_id_2).ok_or(Error::<T>::InvalidKittyId)?;
 
