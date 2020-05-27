@@ -9,6 +9,7 @@ use sp_runtime::{DispatchError, DispatchResult, traits::{AtLeast32Bit, Bounded, 
 #[derive(Encode, Decode)]
 pub struct Kitty(pub [u8; 16]);
 
+#[cfg_attr(feature = "std", derive(Debug, PartialEq, Eq))]
 #[derive(Encode, Decode)]
 pub struct KittyLinkedItem<T: Trait> {
 	pub prev: Option<T::KittyIndex>,
@@ -169,5 +170,125 @@ impl<T: Trait> Module<T> {
 		Self::insert_kitty(sender, kitty_id, Kitty(new_dna));
 
 		Ok(())
+	}
+}
+
+/// tests for this module
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	use sp_core::H256;
+	use frame_support::{impl_outer_origin, parameter_types, weights::Weight};
+	use sp_runtime::{
+		traits::{BlakeTwo256, IdentityLookup}, testing::Header, Perbill,
+	};
+	use frame_system as system;
+
+	impl_outer_origin! {
+		pub enum Origin for Test {}
+	}
+
+	// For testing the module, we construct most of a mock runtime. This means
+	// first constructing a configuration type (`Test`) which `impl`s each of the
+	// configuration traits of modules we want to use.
+	#[derive(Clone, Eq, PartialEq, Debug)]
+	pub struct Test;
+	parameter_types! {
+		pub const BlockHashCount: u64 = 250;
+		pub const MaximumBlockWeight: Weight = 1024;
+		pub const MaximumBlockLength: u32 = 2 * 1024;
+		pub const AvailableBlockRatio: Perbill = Perbill::from_percent(75);
+	}
+	impl system::Trait for Test {
+		type Origin = Origin;
+		type Call = ();
+		type Index = u64;
+		type BlockNumber = u64;
+		type Hash = H256;
+		type Hashing = BlakeTwo256;
+		type AccountId = u64;
+		type Lookup = IdentityLookup<Self::AccountId>;
+		type Header = Header;
+		type Event = ();
+		type BlockHashCount = BlockHashCount;
+		type MaximumBlockWeight = MaximumBlockWeight;
+		type DbWeight = ();
+		type BlockExecutionWeight = ();
+		type ExtrinsicBaseWeight = ();
+		type MaximumExtrinsicWeight = MaximumBlockWeight;
+		type MaximumBlockLength = MaximumBlockLength;
+		type AvailableBlockRatio = AvailableBlockRatio;
+		type Version = ();
+		type ModuleToIndex = ();
+		type AccountData = ();
+		type OnNewAccount = ();
+		type OnKilledAccount = ();
+	}
+	impl Trait for Test {
+		type KittyIndex = u32;
+	}
+	type OwnedKittiesTest = OwnedKitties<Test>;
+
+	// This function basically just builds a genesis storage key/value store according to
+	// our desired mockup.
+	fn new_test_ext() -> sp_io::TestExternalities {
+		system::GenesisConfig::default().build_storage::<Test>().unwrap().into()
+	}
+
+	#[test]
+	fn owned_kitties_can_append_values() {
+		new_test_ext().execute_with(|| {
+			OwnedKittiesTest::append(&0, 1);
+
+			assert_eq!(OwnedKittiesTest::get(&(0, None)), Some(KittyLinkedItem {
+				prev: Some(1),
+				next: Some(1),
+			}));
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(1))), Some(KittyLinkedItem {
+				prev: None,
+				next: None,
+			}));
+
+			OwnedKittiesTest::append(&0, 2);
+
+			assert_eq!(OwnedKittiesTest::get(&(0, None)), Some(KittyLinkedItem {
+				prev: Some(2),
+				next: Some(1),
+			}));
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(1))), Some(KittyLinkedItem {
+				prev: None,
+				next: Some(2),
+			}));
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(2))), Some(KittyLinkedItem {
+				prev: Some(1),
+				next: None,
+			}));
+
+			OwnedKittiesTest::append(&0, 3);
+
+			assert_eq!(OwnedKittiesTest::get(&(0, None)), Some(KittyLinkedItem {
+				prev: Some(3),
+				next: Some(1),
+			}));
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(1))), Some(KittyLinkedItem {
+				prev: None,
+				next: Some(2),
+			}));
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(2))), Some(KittyLinkedItem {
+				prev: Some(1),
+				next: Some(3),
+			}));
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(3))), Some(KittyLinkedItem {
+				prev: Some(2),
+				next: None,
+			}));
+		});
 	}
 }
