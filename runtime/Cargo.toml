@@ -167,6 +167,10 @@ package = 'pallet-transaction-payment'
 tag = 'v2.0.0-rc2'
 version = '2.0.0-rc2'
 
+[dependencies.pallet-kitties]
+default-features = false
+path = '../pallets/kitties'
+
 [features]
 default = ['std']
 std = [
@@ -195,6 +199,7 @@ std = [
     'timestamp/std',
     'transaction-payment/std',
     'template/std',
+    'pallet-kitties/std',
 ]
 
 [build-dependencies.wasm-builder-runner]
