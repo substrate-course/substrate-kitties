@@ -38,6 +38,7 @@ decl_error! {
 		KittiesCountOverflow,
 		InvalidKittyId,
 		RequireDifferentParent,
+		RequireOwner,
 	}
 }
 
@@ -65,6 +66,17 @@ decl_module! {
 			let sender = ensure_signed(origin)?;
 
 			Self::do_breed(&sender, kitty_id_1, kitty_id_2)?;
+		}
+
+		/// Transfer a kitty to new owner
+		#[weight = 0]
+		pub fn transfer(origin, to: T::AccountId, kitty_id: T::KittyIndex) {
+			let sender = ensure_signed(origin)?;
+
+			ensure!(<OwnedKitties<T>>::contains_key((&sender, Some(kitty_id))), Error::<T>::RequireOwner);
+
+			<OwnedKitties<T>>::remove(&sender, kitty_id);
+			<OwnedKitties<T>>::append(&to, kitty_id);
 		}
 	}
 }
