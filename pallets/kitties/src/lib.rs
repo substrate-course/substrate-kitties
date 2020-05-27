@@ -4,13 +4,19 @@ use codec::{Encode, Decode};
 use frame_support::{decl_module, decl_storage, decl_error, ensure, StorageValue, StorageMap, traits::Randomness, Parameter};
 use sp_io::hashing::blake2_128;
 use frame_system::ensure_signed;
-use sp_runtime::{DispatchError, DispatchResult, traits::{AtLeast32Bit, Bounded}};
+use sp_runtime::{DispatchError, DispatchResult, traits::{AtLeast32Bit, Bounded, Member}};
 
 #[derive(Encode, Decode)]
 pub struct Kitty(pub [u8; 16]);
 
+#[derive(Encode, Decode)]
+pub struct KittyLinkedItem<T: Trait> {
+	pub prev: Option<T::KittyIndex>,
+	pub next: Option<T::KittyIndex>,
+}
+
 pub trait Trait: frame_system::Trait {
-	type KittyIndex: Parameter + AtLeast32Bit + Bounded + Default + Copy;
+	type KittyIndex: Parameter + Member + AtLeast32Bit + Bounded + Default + Copy;
 }
 
 decl_storage! {
@@ -20,10 +26,9 @@ decl_storage! {
 		/// Stores the total number of kitties. i.e. the next kitty index
 		pub KittiesCount get(fn kitties_count): T::KittyIndex;
 
-		/// Get kitty ID by account ID and user kitty index
-		pub OwnedKitties get(fn owned_kitties): map hasher(blake2_128_concat) (T::AccountId, T::KittyIndex) => T::KittyIndex;
-		/// Get number of kitties by account ID
-		pub OwnedKittiesCount get(fn owned_kitties_count): map hasher(blake2_128_concat) T::AccountId => T::KittyIndex;
+		/// Store owned kitties in a linked list.
+		pub OwnedKitties get(fn owned_kitties): map hasher(blake2_128_concat) (T::AccountId, Option<T::KittyIndex>) => Option<KittyLinkedItem<T>>;
+
 	}
 }
 
@@ -50,7 +55,7 @@ decl_module! {
 
 			// Create and store kitty
 			let kitty = Kitty(dna);
-			Self::insert_kitty(sender, kitty_id, kitty);
+			Self::insert_kitty(&sender, kitty_id, kitty);
 		}
 
 		/// Breed kitties
@@ -58,8 +63,52 @@ decl_module! {
 		pub fn breed(origin, kitty_id_1: T::KittyIndex, kitty_id_2: T::KittyIndex) {
 			let sender = ensure_signed(origin)?;
 
-			Self::do_breed(sender, kitty_id_1, kitty_id_2)?;
+			Self::do_breed(&sender, kitty_id_1, kitty_id_2)?;
 		}
+	}
+}
+
+impl<T: Trait> OwnedKitties<T> {
+	fn read_head(account: &T::AccountId) -> KittyLinkedItem<T> {
+		Self::read(account, None)
+	}
+
+	fn write_head(account: &T::AccountId, item: KittyLinkedItem<T>) {
+		Self::write(account, None, item);
+	}
+
+	fn read(account: &T::AccountId, key: Option<T::KittyIndex>) -> KittyLinkedItem<T> {
+		<OwnedKitties<T>>::get((&account, key)).unwrap_or_else(|| KittyLinkedItem {
+			prev: None,
+			next: None,
+		})
+	}
+
+	fn write(account: &T::AccountId, key: Option<T::KittyIndex>, item: KittyLinkedItem<T>) {
+		<OwnedKitties<T>>::insert((&account, key), item);
+	}
+
+	pub fn append(account: &T::AccountId, kitty_id: T::KittyIndex) {
+		let head = Self::read_head(account);
+		let new_head = KittyLinkedItem {
+			prev: Some(kitty_id),
+			next: head.next,
+		};
+
+		Self::write_head(account, new_head);
+
+		let prev = Self::read(account, head.prev);
+		let new_prev = KittyLinkedItem {
+			prev: prev.prev,
+			next: Some(kitty_id),
+		};
+		Self::write(account, head.prev, new_prev);
+
+		let item = KittyLinkedItem {
+			prev: head.prev,
+			next: None,
+		};
+		Self::write(account, Some(kitty_id), item);
 	}
 }
 
@@ -85,18 +134,19 @@ impl<T: Trait> Module<T> {
 		Ok(kitty_id)
 	}
 
-	fn insert_kitty(owner: T::AccountId, kitty_id: T::KittyIndex, kitty: Kitty) {
+	fn insert_owned_kitty(owner: &T::AccountId, kitty_id: T::KittyIndex) {
+		<OwnedKitties<T>>::append(owner, kitty_id);
+	}
+
+	fn insert_kitty(owner: &T::AccountId, kitty_id: T::KittyIndex, kitty: Kitty) {
 		// Create and store kitty
 		Kitties::<T>::insert(kitty_id, kitty);
 		KittiesCount::<T>::put(kitty_id + 1.into());
 
-		// Store the ownership information
-		let user_kitties_id = Self::owned_kitties_count(owner.clone());
-		<OwnedKitties<T>>::insert((owner.clone(), user_kitties_id), kitty_id);
-		<OwnedKittiesCount<T>>::insert(owner, user_kitties_id + 1.into());
+		Self::insert_owned_kitty(owner, kitty_id);
 	}
 
-	fn do_breed(sender: T::AccountId, kitty_id_1: T::KittyIndex, kitty_id_2: T::KittyIndex) -> DispatchResult {
+	fn do_breed(sender: &T::AccountId, kitty_id_1: T::KittyIndex, kitty_id_2: T::KittyIndex) -> DispatchResult {
 		let kitty1 = Self::kitties(kitty_id_1).ok_or(Error::<T>::InvalidKittyId)?;
 		let kitty2 = Self::kitties(kitty_id_2).ok_or(Error::<T>::InvalidKittyId)?;
 
