@@ -1,7 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use codec::{Encode, Decode};
-use frame_support::{decl_module, decl_storage, StorageValue, StorageMap, traits::Randomness};
+use frame_support::{decl_module, decl_storage, decl_error, StorageValue, StorageMap, traits::Randomness};
 use sp_io::hashing::blake2_128;
 use frame_system::ensure_signed;
 
@@ -20,12 +20,24 @@ decl_storage! {
 	}
 }
 
+decl_error! {
+	pub enum Error for Module<T: Trait> {
+		KittiesCountOverflow,
+	}
+}
+
 decl_module! {
 	pub struct Module<T: Trait> for enum Call where origin: T::Origin {
+		type Error = Error<T>;
+
 		/// Create a new kitty
 		#[weight = 0]
 		pub fn create(origin) {
 			let sender = ensure_signed(origin)?;
+			let count = Self::kitties_count();
+			if count == u32::max_value() {
+				return Err(Error::<T>::KittiesCountOverflow.into());
+			}
 			let payload = (
 				<pallet_randomness_collective_flip::Module<T> as Randomness<T::Hash>>::random_seed(),
 				sender,
@@ -33,7 +45,6 @@ decl_module! {
 			);
 			let dna = payload.using_encoded(blake2_128);
 			let kitty = Kitty(dna);
-			let count = Self::kitties_count();
 			Kitties::insert(count, kitty);
 			KittiesCount::put(count + 1);
 		}
