@@ -11,6 +11,8 @@ frame-support = { version = "2.0.0-rc2", default-features = false, git = 'https:
 frame-system = { version = "2.0.0-rc2", default-features = false, git = 'https://github.com/paritytech/substrate.git', tag = 'v2.0.0-rc2' }
 sp-io = { version = "2.0.0-rc2", default-features = false, git = 'https://github.com/paritytech/substrate.git', tag = 'v2.0.0-rc2' }
 pallet-randomness-collective-flip = { version = "2.0.0-rc2", default-features = false, git = 'https://github.com/paritytech/substrate.git', tag = 'v2.0.0-rc2' }
+sp-runtime = { version = "2.0.0-rc2", default-features = false, git = 'https://github.com/paritytech/substrate.git', tag = 'v2.0.0-rc2' }
+sp-std = { version = "2.0.0-rc2", default-features = false, git = 'https://github.com/paritytech/substrate.git', tag = 'v2.0.0-rc2' }
 
 [features]
 default = ["std"]
@@ -19,4 +21,6 @@ std = [
     "frame-system/std",
     "sp-io/std",
     "pallet-randomness-collective-flip/std",
+    "sp-runtime/std",
+    "sp-std/std",
 ]
