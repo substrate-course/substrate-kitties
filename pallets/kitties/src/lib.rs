@@ -1,10 +1,12 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use codec::{Encode, Decode};
-use frame_support::{decl_module, decl_storage};
+use frame_support::{decl_module, decl_storage, StorageValue, StorageMap, traits::Randomness};
+use sp_io::hashing::blake2_128;
+use frame_system::ensure_signed;
 
 #[derive(Encode, Decode, Default)]
-pub struct Kitty(u128);
+pub struct Kitty(pub [u8; 16]);
 
 pub trait Trait: frame_system::Trait {
 }
@@ -20,5 +22,20 @@ decl_storage! {
 
 decl_module! {
 	pub struct Module<T: Trait> for enum Call where origin: T::Origin {
+		/// Create a new kitty
+		#[weight = 0]
+		pub fn create(origin) {
+			let sender = ensure_signed(origin)?;
+			let payload = (
+				<pallet_randomness_collective_flip::Module<T> as Randomness<T::Hash>>::random_seed(),
+				sender,
+				<frame_system::Module<T>>::extrinsic_index(),
+			);
+			let dna = payload.using_encoded(blake2_128);
+			let kitty = Kitty(dna);
+			let count = Self::kitties_count();
+			Kitties::insert(count, kitty);
+			KittiesCount::put(count + 1);
+		}
 	}
 }
