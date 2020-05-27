@@ -111,6 +111,26 @@ impl<T: Trait> OwnedKitties<T> {
 		};
 		Self::write(account, Some(kitty_id), item);
 	}
+
+	pub fn remove(account: &T::AccountId, kitty_id: T::KittyIndex) {
+		if let Some(item) = <OwnedKitties<T>>::take((&account, Some(kitty_id))) {
+			let prev = Self::read(account, item.prev);
+			let new_prev = KittyLinkedItem {
+				prev: prev.prev,
+				next: item.next,
+			};
+
+			Self::write(account, item.prev, new_prev);
+
+			let next = Self::read(account, item.next);
+			let new_next = KittyLinkedItem {
+				prev: item.prev,
+				next: next.next,
+			};
+
+			 Self::write(account, item.next, new_next);
+		}
+	}
 }
 
 fn combine_dna(dna1: u8, dna2: u8, selector: u8) -> u8 {
@@ -289,6 +309,63 @@ mod tests {
 				prev: Some(2),
 				next: None,
 			}));
+		});
+	}
+
+	#[test]
+	fn owned_kitties_can_remove_values() {
+		new_test_ext().execute_with(|| {
+			OwnedKittiesTest::append(&0, 1);
+			OwnedKittiesTest::append(&0, 2);
+			OwnedKittiesTest::append(&0, 3);
+
+			OwnedKittiesTest::remove(&0, 2);
+
+			assert_eq!(OwnedKittiesTest::get(&(0, None)), Some(KittyLinkedItem {
+				prev: Some(3),
+				next: Some(1),
+			}));
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(1))), Some(KittyLinkedItem {
+				prev: None,
+				next: Some(3),
+			}));
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(2))), None);
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(3))), Some(KittyLinkedItem {
+				prev: Some(1),
+				next: None,
+			}));
+
+			OwnedKittiesTest::remove(&0, 1);
+
+			assert_eq!(OwnedKittiesTest::get(&(0, None)), Some(KittyLinkedItem {
+				prev: Some(3),
+				next: Some(3),
+			}));
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(1))), None);
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(2))), None);
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(3))), Some(KittyLinkedItem {
+				prev: None,
+				next: None,
+			}));
+
+			OwnedKittiesTest::remove(&0, 3);
+
+			assert_eq!(OwnedKittiesTest::get(&(0, None)), Some(KittyLinkedItem {
+				prev: None,
+				next: None,
+			}));
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(1))), None);
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(2))), None);
+
+			assert_eq!(OwnedKittiesTest::get(&(0, Some(2))), None);
 		});
 	}
 }
