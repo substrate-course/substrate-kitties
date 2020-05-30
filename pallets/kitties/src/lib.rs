@@ -16,7 +16,7 @@ pub struct KittyLinkedItem<T: Trait> {
 	pub next: Option<T::KittyIndex>,
 }
 
-pub trait Trait: frame_system::Trait {
+pub trait Trait: pallet_balances::Trait {
 	type KittyIndex: Parameter + Member + AtLeast32Bit + Bounded + Default + Copy;
 }
 
@@ -31,6 +31,9 @@ decl_storage! {
 		pub OwnedKitties get(fn owned_kitties): map hasher(blake2_128_concat) (T::AccountId, Option<T::KittyIndex>) => Option<KittyLinkedItem<T>>;
 		/// Store owner of each kitity.
 		pub KittyOwners get(fn kitty_owner): map hasher(blake2_128_concat) T::KittyIndex => Option<T::AccountId>;
+
+		/// Get kitty price. None means not for sale.
+		pub KittyPrices get(fn kitty_price): map hasher(blake2_128_concat) T::KittyIndex => Option<T::Balance>;
 	}
 }
 
@@ -78,6 +81,17 @@ decl_module! {
 
 			<OwnedKitties<T>>::remove(&sender, kitty_id);
 			Self::insert_owned_kitty(&to, kitty_id);
+		}
+
+		/// Set a price for a kitty for sale
+		/// None to delist the kitty
+		#[weight = 0]
+ 		pub fn ask(origin, kitty_id: T::KittyIndex, new_price: Option<T::Balance>) {
+			let sender = ensure_signed(origin)?;
+
+			ensure!(<OwnedKitties<T>>::contains_key((&sender, Some(kitty_id))), Error::<T>::RequireOwner);
+
+			<KittyPrices<T>>::mutate_exists(kitty_id, |price| *price = new_price);
 		}
 	}
 }
