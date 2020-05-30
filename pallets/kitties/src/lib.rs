@@ -2,12 +2,12 @@
 
 use codec::{Encode, Decode};
 use frame_support::{
-	decl_module, decl_storage, decl_error, ensure, StorageValue, StorageMap, Parameter,
+	decl_module, decl_storage, decl_error, decl_event, ensure, StorageValue, StorageMap, Parameter,
 	traits::{Randomness, Currency, ExistenceRequirement},
 };
 use sp_io::hashing::blake2_128;
-use frame_system::ensure_signed;
-use sp_runtime::{DispatchError, DispatchResult, traits::{AtLeast32Bit, Bounded, Member}};
+use frame_system::{self as system, ensure_signed};
+use sp_runtime::{DispatchError, traits::{AtLeast32Bit, Bounded, Member}};
 
 #[derive(Encode, Decode)]
 pub struct Kitty(pub [u8; 16]);
@@ -20,6 +20,7 @@ pub struct KittyLinkedItem<T: Trait> {
 }
 
 pub trait Trait: frame_system::Trait {
+	type Event: From<Event<Self>> + Into<<Self as frame_system::Trait>::Event>;
 	type KittyIndex: Parameter + Member + AtLeast32Bit + Bounded + Default + Copy;
 	type Currency: Currency<Self::AccountId>;
 	type Randomness: Randomness<Self::Hash>;
@@ -55,9 +56,28 @@ decl_error! {
 	}
 }
 
+decl_event!(
+	pub enum Event<T> where
+		<T as frame_system::Trait>::AccountId,
+		<T as Trait>::KittyIndex,
+		Balance = BalanceOf<T>,
+	{
+		/// A kitty is created. (owner, kitty_id)
+		Created(AccountId, KittyIndex),
+		/// A kitty is transferred. (from, to, kitty_id)
+		Transferred(AccountId, AccountId, KittyIndex),
+		/// A kitty is available for sale. (owner, kitty_id, price)
+		Ask(AccountId, KittyIndex, Option<Balance>),
+		/// A kitty is sold. (from, to, kitty_id, price)
+		Sold(AccountId, AccountId, KittyIndex, Balance),
+	}
+);
+
 decl_module! {
 	pub struct Module<T: Trait> for enum Call where origin: T::Origin {
 		type Error = Error<T>;
+
+		fn deposit_event() = default;
 
 		/// Create a new kitty
 		#[weight = 0]
@@ -71,6 +91,8 @@ decl_module! {
 			// Create and store kitty
 			let kitty = Kitty(dna);
 			Self::insert_kitty(&sender, kitty_id, kitty);
+
+			Self::deposit_event(RawEvent::Created(sender, kitty_id));
 		}
 
 		/// Breed kitties
@@ -78,7 +100,9 @@ decl_module! {
 		pub fn breed(origin, kitty_id_1: T::KittyIndex, kitty_id_2: T::KittyIndex) {
 			let sender = ensure_signed(origin)?;
 
-			Self::do_breed(&sender, kitty_id_1, kitty_id_2)?;
+			let new_kitty_id = Self::do_breed(&sender, kitty_id_1, kitty_id_2)?;
+
+			Self::deposit_event(RawEvent::Created(sender, new_kitty_id));
 		}
 
 		/// Transfer a kitty to new owner
@@ -89,6 +113,8 @@ decl_module! {
 			ensure!(<OwnedKitties<T>>::contains_key((&sender, Some(kitty_id))), Error::<T>::RequireOwner);
 
 			Self::do_transfer(&sender, &to, kitty_id);
+
+			Self::deposit_event(RawEvent::Transferred(sender, to, kitty_id));
 		}
 
 		/// Set a price for a kitty for sale
@@ -100,6 +126,8 @@ decl_module! {
 			ensure!(<OwnedKitties<T>>::contains_key((&sender, Some(kitty_id))), Error::<T>::RequireOwner);
 
 			<KittyPrices<T>>::mutate_exists(kitty_id, |price| *price = new_price);
+
+			Self::deposit_event(RawEvent::Ask(sender, kitty_id, new_price));
 		}
 
 		/// Buy a kitty
@@ -118,6 +146,8 @@ decl_module! {
 			<KittyPrices<T>>::remove(kitty_id);
 
 			Self::do_transfer(&owner, &sender, kitty_id);
+
+			Self::deposit_event(RawEvent::Sold(owner, sender, kitty_id, kitty_price));
 		}
 	}
 }
@@ -221,7 +251,7 @@ impl<T: Trait> Module<T> {
 		Self::insert_owned_kitty(owner, kitty_id);
 	}
 
-	fn do_breed(sender: &T::AccountId, kitty_id_1: T::KittyIndex, kitty_id_2: T::KittyIndex) -> DispatchResult {
+	fn do_breed(sender: &T::AccountId, kitty_id_1: T::KittyIndex, kitty_id_2: T::KittyIndex) -> sp_std::result::Result<T::KittyIndex, DispatchError> {
 		let kitty1 = Self::kitties(kitty_id_1).ok_or(Error::<T>::InvalidKittyId)?;
 		let kitty2 = Self::kitties(kitty_id_2).ok_or(Error::<T>::InvalidKittyId)?;
 
@@ -245,7 +275,7 @@ impl<T: Trait> Module<T> {
 
 		Self::insert_kitty(sender, kitty_id, Kitty(new_dna));
 
-		Ok(())
+		Ok(kitty_id)
 	}
 
 	fn do_transfer(from: &T::AccountId, to: &T::AccountId, kitty_id: T::KittyIndex)  {
