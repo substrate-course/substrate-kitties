@@ -259,6 +259,7 @@ impl template::Trait for Runtime {
 
 impl pallet_kitties::Trait for Runtime {
 	type KittyIndex = u32;
+	type Currency = Balances;
 }
 
 construct_runtime!(
