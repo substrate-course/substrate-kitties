@@ -1,7 +1,10 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use codec::{Encode, Decode};
-use frame_support::{decl_module, decl_storage, decl_error, ensure, StorageValue, StorageMap, traits::Randomness, Parameter};
+use frame_support::{
+	decl_module, decl_storage, decl_error, ensure, StorageValue, StorageMap, Parameter,
+	traits::{Randomness, Currency, ExistenceRequirement},
+};
 use sp_io::hashing::blake2_128;
 use frame_system::ensure_signed;
 use sp_runtime::{DispatchError, DispatchResult, traits::{AtLeast32Bit, Bounded, Member}};
@@ -43,6 +46,8 @@ decl_error! {
 		InvalidKittyId,
 		RequireDifferentParent,
 		RequireOwner,
+		NotForSale,
+		PriceTooLow,
 	}
 }
 
@@ -79,8 +84,7 @@ decl_module! {
 
 			ensure!(<OwnedKitties<T>>::contains_key((&sender, Some(kitty_id))), Error::<T>::RequireOwner);
 
-			<OwnedKitties<T>>::remove(&sender, kitty_id);
-			Self::insert_owned_kitty(&to, kitty_id);
+			Self::do_transfer(&sender, &to, kitty_id);
 		}
 
 		/// Set a price for a kitty for sale
@@ -92,6 +96,24 @@ decl_module! {
 			ensure!(<OwnedKitties<T>>::contains_key((&sender, Some(kitty_id))), Error::<T>::RequireOwner);
 
 			<KittyPrices<T>>::mutate_exists(kitty_id, |price| *price = new_price);
+		}
+
+		/// Buy a kitty
+		#[weight = 0]
+		pub fn buy(origin, kitty_id: T::KittyIndex, price: T::Balance) {
+			let sender = ensure_signed(origin)?;
+
+			let owner = Self::kitty_owner(kitty_id).ok_or(Error::<T>::InvalidKittyId)?;
+
+			let kitty_price = Self::kitty_price(kitty_id).ok_or(Error::<T>::NotForSale)?;
+
+			ensure!(price >= kitty_price, Error::<T>::PriceTooLow);
+
+			<pallet_balances::Module<T> as Currency<T::AccountId>>::transfer(&sender, &owner, kitty_price, ExistenceRequirement::KeepAlive)?;
+
+			<KittyPrices<T>>::remove(kitty_id);
+
+			Self::do_transfer(&owner, &sender, kitty_id);
 		}
 	}
 }
@@ -155,7 +177,7 @@ impl<T: Trait> OwnedKitties<T> {
 				next: next.next,
 			};
 
-			 Self::write(account, item.next, new_next);
+			Self::write(account, item.next, new_next);
 		}
 	}
 }
@@ -220,6 +242,11 @@ impl<T: Trait> Module<T> {
 		Self::insert_kitty(sender, kitty_id, Kitty(new_dna));
 
 		Ok(())
+	}
+
+	fn do_transfer(from: &T::AccountId, to: &T::AccountId, kitty_id: T::KittyIndex)  {
+		<OwnedKitties<T>>::remove(&from, kitty_id);
+		Self::insert_owned_kitty(&to, kitty_id);
 	}
 }
 
