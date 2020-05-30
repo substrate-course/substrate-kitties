@@ -183,6 +183,8 @@ impl<T: Trait> Module<T> {
 		let kitty1 = Self::kitties(kitty_id_1).ok_or(Error::<T>::InvalidKittyId)?;
 		let kitty2 = Self::kitties(kitty_id_2).ok_or(Error::<T>::InvalidKittyId)?;
 
+		ensure!(<OwnedKitties<T>>::contains_key((&sender, Some(kitty_id_1))), Error::<T>::RequireOwner);
+		ensure!(<OwnedKitties<T>>::contains_key((&sender, Some(kitty_id_2))), Error::<T>::RequireOwner);
 		ensure!(kitty_id_1 != kitty_id_2, Error::<T>::RequireDifferentParent);
 
 		let kitty_id = Self::next_kitty_id()?;
