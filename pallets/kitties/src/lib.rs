@@ -22,6 +22,7 @@ pub struct KittyLinkedItem<T: Trait> {
 pub trait Trait: frame_system::Trait {
 	type KittyIndex: Parameter + Member + AtLeast32Bit + Bounded + Default + Copy;
 	type Currency: Currency<Self::AccountId>;
+	type Randomness: Randomness<Self::Hash>;
 }
 
 type BalanceOf<T> = <<T as Trait>::Currency as Currency<<T as frame_system::Trait>::AccountId>>::Balance;
@@ -192,7 +193,7 @@ fn combine_dna(dna1: u8, dna2: u8, selector: u8) -> u8 {
 impl<T: Trait> Module<T> {
 	fn random_value(sender: &T::AccountId) -> [u8; 16] {
 		let payload = (
-			<pallet_randomness_collective_flip::Module<T> as Randomness<T::Hash>>::random_seed(),
+			T::Randomness::random_seed(),
 			&sender,
 			<frame_system::Module<T>>::extrinsic_index(),
 		);
