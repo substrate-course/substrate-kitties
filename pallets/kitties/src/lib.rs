@@ -8,16 +8,12 @@ use frame_support::{
 use sp_io::hashing::blake2_128;
 use frame_system::{self as system, ensure_signed};
 use sp_runtime::{DispatchError, traits::{AtLeast32Bit, Bounded, Member}};
+use crate::linked_item::{LinkedList, LinkedItem};
+
+mod linked_item;
 
 #[derive(Encode, Decode)]
 pub struct Kitty(pub [u8; 16]);
-
-#[cfg_attr(feature = "std", derive(Debug, PartialEq, Eq))]
-#[derive(Encode, Decode)]
-pub struct KittyLinkedItem<T: Trait> {
-	pub prev: Option<T::KittyIndex>,
-	pub next: Option<T::KittyIndex>,
-}
 
 pub trait Trait: frame_system::Trait {
 	type Event: From<Event<Self>> + Into<<Self as frame_system::Trait>::Event>;
@@ -27,6 +23,8 @@ pub trait Trait: frame_system::Trait {
 }
 
 type BalanceOf<T> = <<T as Trait>::Currency as Currency<<T as frame_system::Trait>::AccountId>>::Balance;
+type KittyLinkedItem<T> = LinkedItem<<T as Trait>::KittyIndex>;
+type OwnedKittiesList<T> = LinkedList<OwnedKitties<T>, <T as system::Trait>::AccountId, <T as Trait>::KittyIndex>;
 
 decl_storage! {
 	trait Store for Module<T: Trait> as Kitties {
@@ -152,70 +150,6 @@ decl_module! {
 	}
 }
 
-impl<T: Trait> OwnedKitties<T> {
-	fn read_head(account: &T::AccountId) -> KittyLinkedItem<T> {
-		Self::read(account, None)
-	}
-
-	fn write_head(account: &T::AccountId, item: KittyLinkedItem<T>) {
-		Self::write(account, None, item);
-	}
-
-	fn read(account: &T::AccountId, key: Option<T::KittyIndex>) -> KittyLinkedItem<T> {
-		<OwnedKitties<T>>::get((&account, key)).unwrap_or_else(|| KittyLinkedItem {
-			prev: None,
-			next: None,
-		})
-	}
-
-	fn write(account: &T::AccountId, key: Option<T::KittyIndex>, item: KittyLinkedItem<T>) {
-		<OwnedKitties<T>>::insert((&account, key), item);
-	}
-
-	pub fn append(account: &T::AccountId, kitty_id: T::KittyIndex) {
-		let head = Self::read_head(account);
-		let new_head = KittyLinkedItem {
-			prev: Some(kitty_id),
-			next: head.next,
-		};
-
-		Self::write_head(account, new_head);
-
-		let prev = Self::read(account, head.prev);
-		let new_prev = KittyLinkedItem {
-			prev: prev.prev,
-			next: Some(kitty_id),
-		};
-		Self::write(account, head.prev, new_prev);
-
-		let item = KittyLinkedItem {
-			prev: head.prev,
-			next: None,
-		};
-		Self::write(account, Some(kitty_id), item);
-	}
-
-	pub fn remove(account: &T::AccountId, kitty_id: T::KittyIndex) {
-		if let Some(item) = <OwnedKitties<T>>::take((&account, Some(kitty_id))) {
-			let prev = Self::read(account, item.prev);
-			let new_prev = KittyLinkedItem {
-				prev: prev.prev,
-				next: item.next,
-			};
-
-			Self::write(account, item.prev, new_prev);
-
-			let next = Self::read(account, item.next);
-			let new_next = KittyLinkedItem {
-				prev: item.prev,
-				next: next.next,
-			};
-
-			Self::write(account, item.next, new_next);
-		}
-	}
-}
-
 fn combine_dna(dna1: u8, dna2: u8, selector: u8) -> u8 {
 	(selector & dna1) | (!selector & dna2)
 }
@@ -239,7 +173,7 @@ impl<T: Trait> Module<T> {
 	}
 
 	fn insert_owned_kitty(owner: &T::AccountId, kitty_id: T::KittyIndex) {
-		<OwnedKitties<T>>::append(owner, kitty_id);
+		<OwnedKittiesList<T>>::append(owner, kitty_id);
 		<KittyOwners<T>>::insert(kitty_id, owner);
 	}
 
@@ -279,7 +213,7 @@ impl<T: Trait> Module<T> {
 	}
 
 	fn do_transfer(from: &T::AccountId, to: &T::AccountId, kitty_id: T::KittyIndex)  {
-		<OwnedKitties<T>>::remove(&from, kitty_id);
+		<OwnedKittiesList<T>>::remove(&from, kitty_id);
 		Self::insert_owned_kitty(&to, kitty_id);
 	}
 }
