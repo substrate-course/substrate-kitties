@@ -29,7 +29,8 @@ decl_storage! {
 
 		/// Store owned kitties in a linked list.
 		pub OwnedKitties get(fn owned_kitties): map hasher(blake2_128_concat) (T::AccountId, Option<T::KittyIndex>) => Option<KittyLinkedItem<T>>;
-
+		/// Store owner of each kitity.
+		pub KittyOwners get(fn kitty_owner): map hasher(blake2_128_concat) T::KittyIndex => Option<T::AccountId>;
 	}
 }
 
@@ -76,7 +77,7 @@ decl_module! {
 			ensure!(<OwnedKitties<T>>::contains_key((&sender, Some(kitty_id))), Error::<T>::RequireOwner);
 
 			<OwnedKitties<T>>::remove(&sender, kitty_id);
-			<OwnedKitties<T>>::append(&to, kitty_id);
+			Self::insert_owned_kitty(&to, kitty_id);
 		}
 	}
 }
@@ -169,6 +170,7 @@ impl<T: Trait> Module<T> {
 
 	fn insert_owned_kitty(owner: &T::AccountId, kitty_id: T::KittyIndex) {
 		<OwnedKitties<T>>::append(owner, kitty_id);
+		<KittyOwners<T>>::insert(kitty_id, owner);
 	}
 
 	fn insert_kitty(owner: &T::AccountId, kitty_id: T::KittyIndex, kitty: Kitty) {
